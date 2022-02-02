@@ -1,16 +1,17 @@
 #!/bin/bash
 
 iris start $ISC_PACKAGE_INSTANCENAME quietly
- 
-cat << EOF | iris session $ISC_PACKAGE_INSTANCENAME -U %SYS
+
+iris session $ISC_PACKAGE_INSTANCENAME -U %SYS << END
 do ##class(%SYSTEM.Process).CurrentDirectory("$PWD")
+set sc = 1
 $@
 if '\$Get(sc) do ##class(%SYSTEM.Process).Terminate(, 1)
-zn "%SYS"
 do ##class(SYS.Container).QuiesceForBundling()
+
 Do ##class(Security.Users).UnExpireUserPasswords("*")
 halt
-EOF
+END
 
 exit=$?
 

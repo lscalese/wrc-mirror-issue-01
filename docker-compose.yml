@@ -1,14 +1,51 @@
-version: '3.6'
+version: '3.7'
+
 services:
-  iris:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    restart: always
-    ports: 
-      - 51773
-      - 52773
-      - 53773
-    volumes:
-      - ~/iris.key:/usr/irissys/mgr/iris.key
-      - ./:/irisdev/app
+  arbiter:
+    image: containers.intersystems.com/intersystems/arbiter:2021.2.0.617.0
+    init: true
+    container_name: mirror-demo-arbiter
+    command: 
+      - /usr/local/etc/irissys/startISCAgent.sh 2188
+    networks:
+      app_net:
+        ipv4_address: 172.16.238.10
+    extra_hosts:
+      - "master:172.16.238.20"
+    cap_add:
+      - NET_ADMIN
+
+  master:
+    build: .
+    image: mirror-demo
+    container_name: mirror-demo-master
+    networks:
+      app_net:
+        ipv4_address: 172.16.238.20
+      mirror_net:
+        ipv4_address: 172.16.220.20
+    # environment: 
+    #  - IRIS_MIRROR_ROLE=master
+    ports:
+      - 81:52773
+    volumes: 
+      - ./init_mirror.sh:/init_mirror.sh
+    hostname: master
+    extra_hosts:
+      - "backup:172.16.238.30"
+      - "report:172.16.238.40"
+    cap_add:
+      - NET_ADMIN
+    # command: ["-a", "/init_mirror.sh"]
+  
+networks:
+  app_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.16.238.0/24"
+  mirror_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.16.220.0/24"

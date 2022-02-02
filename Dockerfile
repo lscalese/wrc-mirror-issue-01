@@ -1,42 +1,46 @@
-ARG IMAGE=store/intersystems/irishealth:2019.3.0.308.0-community
-ARG IMAGE=store/intersystems/iris-community:2019.3.0.309.0
-ARG IMAGE=store/intersystems/iris-community:2019.4.0.379.0
-ARG IMAGE=store/intersystems/iris-community:2020.1.0.199.0
-ARG IMAGE=intersystemsdc/iris-community:2019.4.0.383.0-zpm
-ARG IMAGE=store/intersystems/iris-community:2020.1.0.199.0
-ARG IMAGE=intersystemsdc/iris-community:2020.1.0.209.0-zpm
-ARG IMAGE=intersystemsdc/iris-community:2020.2.0.196.0-zpm
+#
+# ARG IMAGE=containers.intersystems.com/intersystems/iris:2021.1.0.215.0
+# currently there is an issue with 2021.2.0.617.0, work in progress...
+
+ARG IMAGE=containers.intersystems.com/intersystems/iris:2021.2.0.617.0
+
 FROM $IMAGE
 
 USER root
 
-WORKDIR /opt/irisapp
-RUN chown ${ISC_PACKAGE_MGRUSER}:${ISC_PACKAGE_IRISGROUP} /opt/irisapp
-COPY irissession.sh /
-RUN chmod +x /irissession.sh 
+COPY session.sh /
+COPY iris.key /usr/irissys/mgr/iris.key
 
-USER irisowner
+# Install iputils-arping to have arping command.  It's required to configure Virtual IP.
+# Download the latest ZPM version...
+RUN mkdir /opt/demo && \
+    chown ${ISC_PACKAGE_MGRUSER}:${ISC_PACKAGE_IRISGROUP} /opt/demo && \
+    chmod 666 /usr/irissys/mgr/iris.key && \
+    apt-get update && apt-get install iputils-arping && \
+    wget -O /opt/demo/zpm.xml https://pm.community.intersystems.com/packages/zpm/latest/installer
 
-COPY  Installer.cls .
-COPY  %REST.Parameter.cls .
-COPY  src src
-SHELL ["/irissession.sh"]
+USER ${ISC_PACKAGE_MGRUSER}
 
+WORKDIR /opt/demo
+
+# Set Default Miror role to master, will be override on docker-compose file.
+ARG IRIS_MIRROR_ROLE=master
+
+ADD config-files .
+
+SHELL [ "/session.sh" ]
+
+# Install ZPM, config-api and pki-script
+# Load a simple configuration file in json config-api format to : 
+#  - create "myappdata" database.
+#  - add a global mapping in namespace "USER" for global "demo.*" on "myappdata" database.
 RUN \
-  Set ns = $namespace \
-  zn "%SYS" \
-  Set irislibdir = "/usr/irissys/mgr/irislib/" \
-  Set db=##Class(SYS.Database).%OpenId(irislibdir) \
-  Set db.ReadOnly = 0 \
-  Do db.%Save() \
-  Kill db \
-  Set sc = $SYSTEM.OBJ.Load("%REST.Parameter.cls", "ck") \
-  Write "Install fix REST ",$SYSTEM.Status.GetOneErrorText(sc) \
-  Set db=##Class(SYS.Database).%OpenId(irislibdir) \
-  Set db.ReadOnly = 1 \
-  Do db.%Save() \
-  zn ns \
-  do $SYSTEM.OBJ.Load("Installer.cls", "ck") \
-  set sc = ##class(App.Installer).setup() 
-# bringing the standard shell back
-SHELL ["/bin/bash", "-c"]
+Do $SYSTEM.OBJ.Load("/opt/demo/zpm.xml", "ck") \
+zpm "install config-api" \
+zpm "install pki-script" \
+Set sc = ##class(Api.Config.Services.Loader).Load("/opt/demo/simple-config.json")
+
+COPY init_mirror.sh /
+
+# Execute a post start script to configure mirroring.
+# CMD ["-a", "/init_mirror.sh"]
