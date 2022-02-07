@@ -53,7 +53,6 @@ you can see these messages :
 
 Now, see the docker log
 
-Wait each instance has the good mirror status.  It takes a while...
 You should see theses messages.log or in docker logs :  
 
 ```
